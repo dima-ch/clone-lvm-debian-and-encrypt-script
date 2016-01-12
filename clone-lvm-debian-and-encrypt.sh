@@ -87,6 +87,7 @@ fi
 SNAPSHOT_SIZE="$2"
 echo "SNAPSHOT_SIZE $SNAPSHOT_SIZE"
 shift
+;;
 --root-size)
 if [  $# == 1 ]; then
 	echo "MISSING ROOT_SIZE"
