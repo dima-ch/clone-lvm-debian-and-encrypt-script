@@ -204,7 +204,9 @@ fi
 
 /sbin/lvcreate --snapshot -n root-snapshot -L ${SNAPSHOT_SIZE}M /dev/${OLD_ROOT_VG}/${OLD_ROOT_LV}
 if [ $? != 0 ];then
-	fLog "lvcreate snapshot failed";
+	echo "LVCREATE SNAPSHOT FAILED!";
+	vgchange -a n $NEW_VG_NAME
+	vgremove $NEW_VG_NAME
 	exit 1;
 fi
 
