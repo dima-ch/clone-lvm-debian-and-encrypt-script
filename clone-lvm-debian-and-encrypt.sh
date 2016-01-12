@@ -5,11 +5,17 @@
 # При клонирование можно зашивровать новый носитель с системой при помощи cryptsetup (конечно-же кроме boot раздела).
 # Размер нового носителя не ограничен размером томов клонируемой системы, а зависит от общего размера всех фалов клонируемой системы.
 
-#CRYPTTAB_ADD="raid /dev/md0 /root/keyfile luks"
-#FSTAB_ADD="/dev/raid-vg/data  /mnt/data ext4  errors=remount-ro,noatime,nodiratime 0    2"
+# Строка добавляемая в /etc/fstab на склонированной системе
+# #FSTAB_ADD="/dev/raid-vg/data  /mnt/data ext4  errors=remount-ro,noatime,nodiratime 0    2"
+# Строка добавляемая в /etc/crypttab на склонированной системе
+# CRYPTTAB_ADD="raid /dev/md0 /root/keyfile luks"
+#
+# Если в группе (vg_name) нет места под снапшот рута можно указать другой диск для временного расширения группы томов --extend-dev /dev/..., 
+# можно указать например --extend-dev /dev/ram0, но стоит учитывать, что по умолчанию это 16MB и может не хватить
+# Если указан --extend-dev то размер снапшота (--snapshot-size) будет равен размеру диска для временного расширения
 
 function usage {
-	echo "usage /dev/disk vg_name lv_name [--encrypt] [--no-rsync] [--extend-dev /dev] [--root-size size] [--swap-size size] [--new-hostname hostname]"
+	echo "usage /dev/disk vg_name lv_name [--encrypt] [--snapshot-size size] [--no-rsync] [--extend-dev /dev/...] [--root-size size] [--swap-size size] [--new-hostname hostname]"
 	exit 1
 }
 
@@ -17,7 +23,7 @@ DISK=$1
 OLD_ROOT_LV=$3
 OLD_ROOT_VG=$2
 
-EXTEND_DEVICE="/dev/ram0"
+SNAPSHOT_SIZE="200M"
 RSYNC_OPTIONS=" --one-file-system  -a " # -v --progress 
 
 
@@ -67,6 +73,14 @@ NEW_HOSTNAME="$2"
 echo "NEW_HOSTNAME $NEW_HOSTNAME"
 shift
 ;;
+--snapshot-size)
+if [  $# == 1 ]; then
+	echo "MISSING SNAPSHOT_SIZE"
+	usage
+fi
+SNAPSHOT_SIZE="$2"
+echo "SNAPSHOT_SIZE $SNAPSHOT_SIZE"
+shift
 --root-size)
 if [  $# == 1 ]; then
 	echo "MISSING ROOT_SIZE"
@@ -98,6 +112,7 @@ echo -e "========Warning!\nPlease disable automount (System-Settings - Details -
 read -p "Press any key to start"
 echo "========create disk part table"
 parted $DISK mktable msdos
+#TODO: размер бута сделать настраевымым
 parted -a optimal $DISK mkpart primary 2048sec 616447sec
 parted -a optimal $DISK mkpart primary 616448sec 100%
 sleep 1
@@ -170,10 +185,13 @@ ROOTMNTTMP="/mnt/rootmnttmp"
 OLD_ROOT_MNT_TMP="/mnt/old-root-mnt-tmp"
 
 echo "========create old root lvm snapshot"
-/sbin/vgextend $OLD_ROOT_VG $EXTEND_DEVICE 
-vgreduce --removemissing $OLD_ROOT_VG
-EXTEND_SIZE=$(( (`/sbin/blockdev --getsize64 $EXTEND_DEVICE`/1024)/1024 - 4 ))
-/sbin/lvcreate --snapshot -n root-snapshot -L ${EXTEND_SIZE}M /dev/${OLD_ROOT_VG}/${OLD_ROOT_LV}
+if [ -n "$EXTEND_DEVICE" ]; then
+	/sbin/vgextend $OLD_ROOT_VG $EXTEND_DEVICE 
+	vgreduce --removemissing $OLD_ROOT_VG
+	SNAPSHOT_SIZE=$(( (`/sbin/blockdev --getsize64 $EXTEND_DEVICE`/1024)/1024 - 4 ))
+fi
+
+/sbin/lvcreate --snapshot -n root-snapshot -L ${SNAPSHOT_SIZE}M /dev/${OLD_ROOT_VG}/${OLD_ROOT_LV}
 
 echo "========mount old root snapshot"
 mkdir $OLD_ROOT_MNT_TMP
@@ -197,7 +215,9 @@ umount $OLD_ROOT_MNT_TMP
 
 echo "========remove old root lvm snapshot"
 echo y | /sbin/lvremove /dev/$OLD_ROOT_VG/root-snapshot
-/sbin/vgreduce  $OLD_ROOT_VG $EXTEND_DEVICE
+if [ -n "$EXTEND_DEVICE" ]; then
+	/sbin/vgreduce  $OLD_ROOT_VG $EXTEND_DEVICE
+fi
 
 echo "========mkfs new boot"
 mkfs.ext2 -m 5 $BOOT
