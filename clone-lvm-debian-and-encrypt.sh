@@ -205,8 +205,10 @@ fi
 /sbin/lvcreate --snapshot -n root-snapshot -L ${SNAPSHOT_SIZE}M /dev/${OLD_ROOT_VG}/${OLD_ROOT_LV}
 if [ $? != 0 ];then
 	echo "LVCREATE SNAPSHOT FAILED!";
-	vgchange -a n $NEW_VG_NAME
 	vgremove $NEW_VG_NAME
+	if [ -n "$ENCRYPT" ]; then
+		/sbin/cryptsetup luksClose $CRYPTNAME
+	fi
 	exit 1;
 fi
 
@@ -225,6 +227,10 @@ read -p "Press any key to rsync root"
 echo "========rsync root"
 if [ ! -n "$NORSYNC" ]; then
 	rsync $RSYNC_OPTIONS $OLD_ROOT_MNT_TMP/* $ROOTMNTTMP/
+	if [ $? != 0 ];then
+		echo "RSYNC ERROR!"
+		RSYNC_ERROR=1
+	fi
 fi
 
 echo "========umount old root snapshot"
@@ -236,15 +242,30 @@ if [ -n "$EXTEND_DEVICE" ]; then
 	/sbin/vgreduce  $OLD_ROOT_VG $EXTEND_DEVICE
 fi
 
-echo "========mkfs new boot"
-mkfs.ext2 -m 5 $BOOT
-echo "========mount new boot"
-mount $BOOT $ROOTMNTTMP/boot
+if [ ! -n "$RSYNC_ERROR" ]; then
+	echo "========mkfs new boot"
+	mkfs.ext2 -m 5 $BOOT
+	echo "========mount new boot"
+	mount $BOOT $ROOTMNTTMP/boot
 
-read -p "Press any key to rsync boot" 
-echo "========rsync boot"
-if [ ! -n "$NORSYNC" ]; then
-	rsync $RSYNC_OPTIONS  /boot/* $ROOTMNTTMP/boot
+	read -p "Press any key to rsync boot" 
+	echo "========rsync boot"
+	if [ ! -n "$NORSYNC" ]; then
+		rsync $RSYNC_OPTIONS  /boot/* $ROOTMNTTMP/boot
+		if [ $? != 0 ];then
+			echo "RSYNC ERROR!"
+			RSYNC_ERROR=1
+		fi
+	fi
+fi
+
+if [ -n "$RSYNC_ERROR" ]; then
+	umount $ROOTMNTTMP
+	vgremove $NEW_VG_NAME
+	if [ -n "$ENCRYPT" ]; then
+		/sbin/cryptsetup luksClose $CRYPTNAME
+	fi
+	exit 1;
 fi
 
 echo "========update crypttab and fstab"
