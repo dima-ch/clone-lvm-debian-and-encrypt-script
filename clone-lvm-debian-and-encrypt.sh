@@ -14,12 +14,14 @@
 # можно указать например --extend-dev /dev/ram0, но стоит учитывать, что по умолчанию это 16MB и может не хватить
 # Если указан --extend-dev то размер снапшота (--snapshot-size) будет равен размеру диска для временного расширения
 
+# TODO скрипт нуждается в проверках выполения действий!
+
 function usage {
-	echo "usage /dev/disk vg_name lv_name [--encrypt] [--snapshot-size size] [--no-rsync] [--extend-dev /dev/...] [--root-size size] [--swap-size size] [--new-hostname hostname]"
+	echo "usage /dev/disk vg_name lv_name [--encrypt] [--snapshot-size size MB] [--no-rsync] [--extend-dev /dev/...] [--root-size size MB] [--swap-size size] [--new-hostname hostname]"
 	echo "/dev/disk - диск на который будет клонироваться система, на нем будет создано 2 раздела: boot и остальное место под LVM"
 	echo "vg_name - имя группы томов клонируемой системы"
 	echo "lv_name - имя тома с рутом клонируемой системы"
-	echo "Внимание! Клонируется только root и boot, не подойдет если у вас отдельно var usr home и так далее"
+	echo "Внимание! Клонируется только root и boot, скрипт не подойдет если var usr home и т.д. на отдельных разделах"
 	exit 1
 }
 
@@ -27,7 +29,7 @@ DISK=$1
 OLD_ROOT_LV=$3
 OLD_ROOT_VG=$2
 
-SNAPSHOT_SIZE="200M"
+SNAPSHOT_SIZE="200"
 RSYNC_OPTIONS=" --one-file-system  -a " # -v --progress 
 
 
@@ -199,7 +201,12 @@ if [ -n "$EXTEND_DEVICE" ]; then
 	SNAPSHOT_SIZE=$(( (`/sbin/blockdev --getsize64 $EXTEND_DEVICE`/1024)/1024 - 4 ))
 fi
 
+if [ -n "$EXTEND_DEVICE" ]; then
 /sbin/lvcreate --snapshot -n root-snapshot -L ${SNAPSHOT_SIZE}M /dev/${OLD_ROOT_VG}/${OLD_ROOT_LV}
+if [ $? != 0 ];then
+	fLog "lvcreate snapshot failed";
+	exit 1;
+fi
 
 echo "========mount old root snapshot"
 mkdir $OLD_ROOT_MNT_TMP
