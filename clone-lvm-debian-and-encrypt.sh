@@ -16,6 +16,10 @@
 
 function usage {
 	echo "usage /dev/disk vg_name lv_name [--encrypt] [--snapshot-size size] [--no-rsync] [--extend-dev /dev/...] [--root-size size] [--swap-size size] [--new-hostname hostname]"
+	echo "/dev/disk - диск на который будет клонироваться система, на нем будет создано 2 раздела: boot и остальное место под LVM"
+	echo "vg_name - имя группы томов клонируемой системы"
+	echo "lv_name - имя тома с рутом клонируемой системы"
+	echo "Внимание! Клонируется только root и boot, не подойдет если у вас отдельно var usr home и так далее"
 	exit 1
 }
 
