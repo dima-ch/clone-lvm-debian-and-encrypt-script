@@ -201,7 +201,6 @@ if [ -n "$EXTEND_DEVICE" ]; then
 	SNAPSHOT_SIZE=$(( (`/sbin/blockdev --getsize64 $EXTEND_DEVICE`/1024)/1024 - 4 ))
 fi
 
-if [ -n "$EXTEND_DEVICE" ]; then
 /sbin/lvcreate --snapshot -n root-snapshot -L ${SNAPSHOT_SIZE}M /dev/${OLD_ROOT_VG}/${OLD_ROOT_LV}
 if [ $? != 0 ];then
 	fLog "lvcreate snapshot failed";
