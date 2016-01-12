@@ -153,11 +153,15 @@ fi
 
 if [ -n "$ENCRYPT" ]; then
 	echo "========ecrypt"
-	apt-get install cryptsetup
-	cryptsetup luksFormat $NEW_LVM_PARTIRION
+	if [ ! -f /sbin/cryptsetup ]; then
+    	echo "cryptsetup not found!"
+    	exit 1
+	fi
+	
+	/sbin/cryptsetup luksFormat $NEW_LVM_PARTIRION
 	sleep 2
 	CRYPTNAME="crypt${NEW_VG_NAME}"
-	cryptsetup luksOpen $NEW_LVM_PARTIRION $CRYPTNAME
+	/sbin/cryptsetup luksOpen $NEW_LVM_PARTIRION $CRYPTNAME
 	REAL_NEW_LVM_PARTIRION=$NEW_LVM_PARTIRION
 	NEW_LVM_PARTIRION=/dev/mapper/$CRYPTNAME
 
@@ -282,5 +286,5 @@ vgchange -a n $NEW_VG_NAME
 
 sleep 5
 if [ -n "$ENCRYPT" ]; then
-	cryptsetup luksClose $CRYPTNAME
+	/sbin/cryptsetup luksClose $CRYPTNAME
 fi
