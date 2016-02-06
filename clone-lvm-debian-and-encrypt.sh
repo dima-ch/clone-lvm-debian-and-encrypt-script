@@ -282,7 +282,7 @@ fi
 echo "/dev/mapper/"$NEW_VG_NAME"-root   /               ext4    errors=remount-ro 0       1" > $ROOTMNTTMP/etc/fstab
 echo "UUID="$BOOT_UUID"   /boot               ext2    defaults        0       2" >> $ROOTMNTTMP/etc/fstab
 if [ -n "$SWAP_SIZE" ]; then
-	echo "/dev/mapper/"$NAME"-swap   none            swap    sw              0       0" >> $ROOTMNTTMP/etc/fstab
+	echo "/dev/mapper/"$NEW_VG_NAME"-swap   none            swap    sw              0       0" >> $ROOTMNTTMP/etc/fstab
 fi
 if [ -n "$FSTAB_ADD" ]; then
 	echo $FSTAB_ADD >> $ROOTMNTTMP/etc/fstab
