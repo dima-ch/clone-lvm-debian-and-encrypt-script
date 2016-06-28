@@ -5,9 +5,7 @@
 # При клонирование можно зашивровать новый носитель с системой при помощи cryptsetup (конечно-же кроме boot раздела).
 # Размер нового носителя не ограничен размером томов клонируемой системы, а зависит от общего размера всех фалов клонируемой системы.
 
-# Строка добавляемая в /etc/fstab на склонированной системе
-# #FSTAB_ADD="/dev/raid-vg/data  /mnt/data ext4  errors=remount-ro,noatime,nodiratime 0    2"
-# Строка добавляемая в /etc/crypttab на склонированной системе
+# FSTAB_ADD="/dev/raid-vg/data  /mnt/data ext4  errors=remount-ro,noatime,nodiratime 0    2"
 # CRYPTTAB_ADD="raid /dev/md0 /root/keyfile luks"
 #
 # Если в группе (vg_name) нет места под снапшот рута можно указать другой диск для временного расширения группы томов --extend-dev /dev/..., 
@@ -17,10 +15,15 @@
 # TODO скрипт нуждается в проверках выполения действий!
 
 function usage {
-	echo "usage /dev/disk vg_name lv_name [--encrypt] [--snapshot-size size MB] [--no-rsync] [--extend-dev /dev/...] [--root-size size MB] [--swap-size size] [--new-hostname hostname]"
+	echo "usage /dev/disk vg_name lv_name [--encrypt] \
+		[--snapshot-size size MB] [--no-rsync] [--extend-dev /dev/...] \
+		[--root-size size MB] [--swap-size size] [--new-hostname hostname] \
+		[--add-crypttab str] [--add-fstab str]"
 	echo "/dev/disk - диск на который будет клонироваться система, на нем будет создано 2 раздела: boot и остальное место под LVM"
 	echo "vg_name - имя группы томов клонируемой системы"
 	echo "lv_name - имя тома с рутом клонируемой системы"
+	echo "--add-crypttab str - строка добавляемая в /etc/crypttab на склонированной системе"
+	echo "--add-fstab str - строка добавляемая в /etc/fstab на склонированной системе"
 	echo "Внимание! Клонируется только root и boot, скрипт не подойдет если var usr home и т.д. на отдельных разделах"
 	exit 1
 }
@@ -104,6 +107,24 @@ if [  $# == 1 ]; then
 fi
 SWAP_SIZE="$2"
 echo "SWAP_SIZE $SWAP_SIZE"
+shift
+;;
+--add-crypttab)
+if [  $# == 1 ]; then
+	echo "MISSING CRYPTTAB_ADD"
+	usage
+fi
+CRYPTTAB_ADD="$2"
+echo "CRYPTTAB_ADD $CRYPTTAB_ADD"
+shift
+;;
+--add-fstab)
+if [  $# == 1 ]; then
+	echo "MISSING FSTAB_ADD"
+	usage
+fi
+FSTAB_ADD="$2"
+echo "FSTAB_ADD $FSTAB_ADD"
 shift
 ;;
 *)
@@ -275,7 +296,7 @@ if [ -n "$ENCRYPT" ]; then
 	CRYPTDEVUUID=`blkid $REAL_NEW_LVM_PARTIRION | awk '{split($2, a, "\"");  print a[2];}'`
 	echo $CRYPTNAME" UUID="$CRYPTDEVUUID" none luks,discard" > $ROOTMNTTMP/etc/crypttab
 	if [ -n "$CRYPTTAB_ADD" ]; then
-		echo $CRYPTTAB_ADD >> $ROOTMNTTMP/etc/crypttab
+		echo -e $CRYPTTAB_ADD >> $ROOTMNTTMP/etc/crypttab
 	fi
 fi
 
@@ -285,7 +306,7 @@ if [ -n "$SWAP_SIZE" ]; then
 	echo "/dev/mapper/"$NEW_VG_NAME"-swap   none            swap    sw              0       0" >> $ROOTMNTTMP/etc/fstab
 fi
 if [ -n "$FSTAB_ADD" ]; then
-	echo $FSTAB_ADD >> $ROOTMNTTMP/etc/fstab
+	echo -e $FSTAB_ADD >> $ROOTMNTTMP/etc/fstab
 fi
 
 echo "========mount dev proc sys"
