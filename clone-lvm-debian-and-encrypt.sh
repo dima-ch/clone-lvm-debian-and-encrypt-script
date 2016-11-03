@@ -252,7 +252,7 @@ if [ ! -n "$NORSYNC" ]; then
 	if [ $? != 0 ];then
 		echo "RSYNC ERROR! press S to skip";
 	        read -s -n 1 KEY
-	        if [[ $key = "S" ]]; then
+	        if [[ $KEY = "S" ]]; then
 			echo "SKIP RSYNC ERROR"
 	        else
        			RSYNC_ERROR=1
@@ -281,7 +281,8 @@ if [ ! -n "$RSYNC_ERROR" ]; then
 		rsync $RSYNC_OPTIONS  /boot/* $ROOTMNTTMP/boot
 		if [ $? != 0 ];then
 	                echo "RSYNC ERROR! press S to skip"
-			if [[ $key = "S" ]]; then
+			read -s -n 1 KEY
+			if [[ $KEY = "S" ]]; then
                         	echo "SKIP RSYNC ERROR"
         	        else
                 	        RSYNC_ERROR=1
