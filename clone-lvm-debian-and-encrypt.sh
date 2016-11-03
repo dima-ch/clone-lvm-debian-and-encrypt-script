@@ -15,9 +15,9 @@
 # TODO скрипт нуждается в проверках выполения действий!
 
 function usage {
-	echo "usage /dev/disk vg_name lv_name [--encrypt] \
-		[--snapshot-size size MB] [--no-rsync] [--extend-dev /dev/...] \
-		[--root-size size MB] [--swap-size size] [--new-hostname hostname] \
+	echo "usage </dev/disk> <vg_name> <lv_name> [--encrypt] \
+		[--snapshot-size size] [--no-rsync] [--extend-dev /dev/...] \
+		[--root-size size] [--swap-size size] [--new-hostname hostname] \
 		[--add-crypttab str] [--add-fstab str]"
 	echo "/dev/disk - диск на который будет клонироваться система, на нем будет создано 2 раздела: boot и остальное место под LVM"
 	echo "vg_name - имя группы томов клонируемой системы"
@@ -221,9 +221,10 @@ if [ -n "$EXTEND_DEVICE" ]; then
 	/sbin/vgextend $OLD_ROOT_VG $EXTEND_DEVICE 
 	vgreduce --removemissing $OLD_ROOT_VG
 	SNAPSHOT_SIZE=$(( (`/sbin/blockdev --getsize64 $EXTEND_DEVICE`/1024)/1024 - 4 ))
+	SNAPSHOT_SIZE="${SNAPSHOT_SIZE}M"
 fi
 
-/sbin/lvcreate --snapshot -n root-snapshot -L ${SNAPSHOT_SIZE}M /dev/${OLD_ROOT_VG}/${OLD_ROOT_LV}
+/sbin/lvcreate --snapshot -n root-snapshot -L ${SNAPSHOT_SIZE} /dev/${OLD_ROOT_VG}/${OLD_ROOT_LV}
 if [ $? != 0 ];then
 	echo "LVCREATE SNAPSHOT FAILED!";
 	vgremove $NEW_VG_NAME
@@ -249,8 +250,13 @@ echo "========rsync root"
 if [ ! -n "$NORSYNC" ]; then
 	rsync $RSYNC_OPTIONS $OLD_ROOT_MNT_TMP/* $ROOTMNTTMP/
 	if [ $? != 0 ];then
-		echo "RSYNC ERROR!"
-		RSYNC_ERROR=1
+		echo "RSYNC ERROR! press S to skip";
+	        read -s -n 1 KEY
+	        if [[ $key = "S" ]]; then
+			echo "SKIP RSYNC ERROR"
+	        else
+       			RSYNC_ERROR=1
+	        fi
 	fi
 fi
 
@@ -274,8 +280,12 @@ if [ ! -n "$RSYNC_ERROR" ]; then
 	if [ ! -n "$NORSYNC" ]; then
 		rsync $RSYNC_OPTIONS  /boot/* $ROOTMNTTMP/boot
 		if [ $? != 0 ];then
-			echo "RSYNC ERROR!"
-			RSYNC_ERROR=1
+	                echo "RSYNC ERROR! press S to skip"
+			if [[ $key = "S" ]]; then
+                        	echo "SKIP RSYNC ERROR"
+        	        else
+                	        RSYNC_ERROR=1
+	                fi
 		fi
 	fi
 fi
