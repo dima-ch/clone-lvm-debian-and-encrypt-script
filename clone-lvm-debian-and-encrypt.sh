@@ -493,6 +493,8 @@ umount $ROOTMNTTMP/boot
 umount $ROOTMNTTMP
 
 sleep 5
+lvchange -a n /dev/$NEW_VG_NAME/root
+lvchange -a n /dev/$NEW_VG_NAME/swap
 vgchange -a n $NEW_VG_NAME
 
 sleep 5
