@@ -16,12 +16,13 @@
 
 function usage {
 	echo "usage </dev/disk> <vg_name> <lv_name> [--encrypt-passphrase passphrase] [--encrypt] \
-		[--snapshot-size size] [--no-rsync] [--extend-dev /dev/...] [--force] \
+		[--snapshot-size size] [--boot-size size_in_MiB] [--no-rsync] [--extend-dev /dev/...] [--force] \
 		[--root-size size] [--swap-size size] [--new-hostname hostname] \
 		[--add-crypttab str] [--add-fstab str] [--exclude-dirs '/dir1 /dir2']"
 	echo "/dev/disk - диск на который будет клонироваться система, на нем будет создано 2 раздела: boot и остальное место под LVM"
 	echo "vg_name - имя группы томов клонируемой системы"
 	echo "lv_name - имя тома с рутом клонируемой системы"
+	echo "--boot-size size_in_MiB - размер загрузочного раздела в мегабайтах по умолчанию 400"
 	echo "--add-crypttab str - строка добавляемая в /etc/crypttab на склонированной системе"
 	echo "--add-fstab str - строка добавляемая в /etc/fstab на склонированной системе"
 	echo "--exclude-dirs - пропустить каталоги"
@@ -36,6 +37,8 @@ OLD_ROOT_VG=$2
 SNAPSHOT_SIZE="200"
 RSYNC_OPTIONS=" --one-file-system  -a " # -v --progress 
 ROOTMNTTMP="rootmnttmp"
+
+BOOT_SIZE=400
 
 
 if [ ! -b "/dev/${OLD_ROOT_VG}/${OLD_ROOT_LV}" ] || [ ! -e "/dev/${OLD_ROOT_VG}/${OLD_ROOT_LV}" ]  || [ ! -n "$2" ]  || [ ! -n "$3" ]; then
@@ -115,6 +118,15 @@ ROOT_SIZE="$2"
 echo "ROOT_SIZE $ROOT_SIZE"
 shift
 ;;
+--boot-size)
+if [  $# == 1 ]; then
+	echo "MISSING BOOT SIZE"
+	usage
+fi
+BOOT_SIZE="$2"
+echo "BOOT_SIZE $BOOT_SIZE"
+shift
+;;
 --swap-size)
 if [  $# == 1 ]; then
 	echo "MISSING SWAP_SIZE"
@@ -192,50 +204,64 @@ if [ ! -n "$FORCE_RUN" ]; then
 fi
 
 echo "========create disk part table"
-parted --script $DISK mktable msdos
+parted --script $DISK mktable gpt
 if [ $? != 0 ];then
    safe_exit
 fi
-#TODO: размер бута сделать настраевымым
-parted --script -a optimal $DISK mkpart primary 2048sec 616447sec
+
+parted --script $DISK mkpart primary 34sec 2047sec
 if [ $? != 0 ];then
    safe_exit
 fi
-parted --script -a optimal $DISK mkpart primary 616448sec 100%
+
+parted --script $DISK set 1 bios_grub
+if [ $? != 0 ];then
+   safe_exit
+fi
+
+parted --script -a optimal $DISK mkpart primary 2048sec $BOOT_SIZE"MiB"
+if [ $? != 0 ];then
+   safe_exit
+fi
+
+START_SIZE=$(expr $BOOT_SIZE + 261)
+parted --script -a optimal $DISK mkpart primary $BOOT_SIZE"MiB" $START_SIZE"MiB" 
+if [ $? != 0 ];then
+   safe_exit
+fi
+
+parted --script -a optimal $DISK mkpart primary $START_SIZE"MiB" 100%
 if [ $? != 0 ];then
    safe_exit
 fi
 
 sleep 1
 if [ -e ${DISK}-part1 ]; then
-	BOOT=${DISK}-part1
+	BOOT=${DISK}-part2
+	EFI=${DISK}-part3
+	NEW_LVM_PARTIRION=${DISK}-part4
 fi
 
 if [ -e ${DISK}1 ]; then
-	BOOT=${DISK}1
+	BOOT=${DISK}2
+	EFI=${DISK}3
+	NEW_LVM_PARTIRION=${DISK}4
 fi
 
 if [ -e ${DISK}p1 ]; then
-	BOOT=${DISK}p1
+	BOOT=${DISK}p2
+	EFI=${DISK}p3
+	NEW_LVM_PARTIRION=${DISK}p4
 fi
 
 if [ ! -n "$BOOT" ]; then
 	echo "ERROR: PART 1 OF DISK NOT FOUND!"
 	exit 1
 fi
-
-if [ -e ${DISK}-part2 ]; then
-	NEW_LVM_PARTIRION=${DISK}-part2
+if [ ! -n "$EFI" ]; then
+	echo "ERROR: PART 2 OF DISK NOT FOUND!"
+	exit 1
 fi
-
-if [ -e ${DISK}2 ]; then
-	NEW_LVM_PARTIRION=${DISK}2
-fi
-
-if [ -e ${DISK}p2 ]; then
-	NEW_LVM_PARTIRION=${DISK}p2
-fi
-
 if [ ! -n "$NEW_LVM_PARTIRION" ]; then
 	echo "ERROR: PART 2 OF DISK NOT FOUND!"
 	exit 1
@@ -276,6 +302,7 @@ if [ -n "$ENCRYPT" ]; then
 fi
 
 echo "========create lvm"
+sleep 2
 pvcreate $NEW_LVM_PARTIRION
 if [ $? != 0 ];then
 	safe_exit
@@ -309,7 +336,7 @@ else
 	fi
 fi
 ROOTLVNAME="/dev/${NEW_VG_NAME}/root"
-mkfs.ext4 -m 0 $ROOTLVNAME
+mkfs.ext4 -F -m 0 $ROOTLVNAME
 if [ $? != 0 ];then
         safe_exit
 fi
@@ -392,14 +419,28 @@ if [ -n "$EXTEND_DEVICE" ]; then
 fi
 
 echo "========mkfs new boot"
-mkfs.ext2 -m 5 $BOOT
+mkfs.ext2 -F -m 5 $BOOT
 if [ $? != 0 ];then
 	safe_exit
 fi
+
+echo "========mkfs efi"
+mkfs.vfat $EFI
+if [ $? != 0 ];then
+        safe_exit
+fi
+
 echo "========mount new boot"
 mount $BOOT $ROOTMNTTMP/boot
 if [ $? != 0 ];then
 	safe_exit
+fi
+
+echo "========mount new efi"
+mkdir -p $ROOTMNTTMP/boot/efi
+mount -t vfat $EFI $ROOTMNTTMP/boot/efi
+if [ $? != 0 ];then
+        safe_exit
 fi
 
 if [ ! -n "$FORCE_RUN" ]; then
@@ -425,6 +466,7 @@ fi
 
 echo "========update crypttab and fstab"
 BOOT_UUID=`blkid $BOOT | awk '{split($2, a, "\"");  print a[2];}'`
+EFI_UUID=`blkid $EFI | awk '{split($3, a, "\"");  print a[2];}'`
 rm $ROOTMNTTMP/etc/crypttab
 if [ -n "$ENCRYPT" ]; then
 	CRYPTDEVUUID=`blkid $REAL_NEW_LVM_PARTIRION | awk '{split($2, a, "\"");  print a[2];}'`
@@ -436,6 +478,7 @@ fi
 
 echo "/dev/mapper/"$NEW_VG_NAME"-root   /               ext4    errors=remount-ro 0       1" > $ROOTMNTTMP/etc/fstab
 echo "UUID="$BOOT_UUID"   /boot               ext2    defaults        0       2" >> $ROOTMNTTMP/etc/fstab
+echo "UUID="$EFI_UUID"   /boot/efi           vfat    defaults        0       2" >> $ROOTMNTTMP/etc/fstab
 if [ -n "$SWAP_SIZE" ]; then
 	echo "/dev/mapper/"$NEW_VG_NAME"-swap   none            swap    sw              0       0" >> $ROOTMNTTMP/etc/fstab
 fi
@@ -459,8 +502,13 @@ if [ $? != 0 ];then
         safe_exit
 fi
 
-echo "========install grub"
-chroot $ROOTMNTTMP grub-install ${DISK}
+#echo "========install grub"
+#chroot $ROOTMNTTMP grub-install ${DISK}
+#if [ $? != 0 ];then
+#        safe_exit
+#fi
+
+chroot $ROOTMNTTMP grub-install --target=x86_64-efi ${DISK}
 if [ $? != 0 ];then
         safe_exit
 fi
